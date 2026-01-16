@@ -285,11 +285,12 @@
             if (gameData?.status === 'voting') {
                 const myPlayer = gameData.players.find(p => p.id === myPlayerId);
                 const hasVoted = myPlayer?.vote !== null;
+                const myVote = myPlayer?.vote;
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-red-500 flex items-center justify-center p-4">
                         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full">
                             <div className="text-center mb-6"><h2 className="text-3xl font-bold text-gray-800 mb-2">Vote for the Imposter</h2><p className="text-gray-600">Who do you think is lying?</p></div>
-                            <div className="space-y-3 mb-6">{gameData.players.map((player) => <button key={player.id} onClick={() => submitVote(player.id)} disabled={hasVoted || player.id === myPlayerId} className={`w-full p-4 rounded-xl font-semibold transition-colors ${player.id === myPlayerId ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : player.vote === player.id ? 'bg-purple-600 text-white' : hasVoted ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-purple-100 text-gray-800'}`}>{player.name}{player.id === myPlayerId && ' (You)'}{player.vote === player.id && ' ✓'}</button>)}</div>
+                            <div className="space-y-3 mb-6">{gameData.players.map((player) => <button key={player.id} onClick={() => submitVote(player.id)} disabled={hasVoted || player.id === myPlayerId} className={`w-full p-4 rounded-xl font-semibold transition-colors ${player.id === myPlayerId ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : myVote === player.id ? 'bg-purple-600 text-white' : hasVoted ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-purple-100 text-gray-800'}`}>{player.name}{player.id === myPlayerId && ' (You)'}{myVote === player.id && ' ✓'}</button>)}</div>
                             {hasVoted && <div className="text-center text-gray-600"><p className="font-semibold mb-2">Vote submitted!</p><p className="text-sm">Waiting for other players...</p><div className="mt-4 text-sm">{gameData.players.filter(p => p.vote !== null).length} / {gameData.players.length} voted</div></div>}
                         </div>
                     </div>
