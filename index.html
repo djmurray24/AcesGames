@@ -8,6 +8,29 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-database.js";
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyCCpRYaFpZ0jkCe1bFdhXNsQfKuVzNRTaI",
+            authDomain: "aces-word-imposter.firebaseapp.com",
+            databaseURL: "https://aces-word-imposter-default-rtdb.firebaseio.com",
+            projectId: "aces-word-imposter",
+            storageBucket: "aces-word-imposter.firebasestorage.app",
+            messagingSenderId: "449007119797",
+            appId: "1:449007119797:web:0b924d99d59634a8d17dfc"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        
+        window.firebaseDB = database;
+        window.firebaseRef = ref;
+        window.firebaseSet = set;
+        window.firebaseOnValue = onValue;
+        window.firebaseGet = get;
+    </script>
     <style>
         @keyframes spin {
             from { transform: rotate(0deg); }
@@ -89,18 +112,6 @@
             </svg>
         );
 
-        // Simple in-memory storage simulation
-        const storage = {
-            data: {},
-            get(key) {
-                return this.data[key] ? { value: this.data[key] } : null;
-            },
-            set(key, value) {
-                this.data[key] = value;
-                return { value };
-            }
-        };
-
         function WordImposterGame() {
             const [screen, setScreen] = useState('home');
             const [roomCode, setRoomCode] = useState('');
@@ -114,25 +125,26 @@
             const [error, setError] = useState('');
             const [generatingWord, setGeneratingWord] = useState(false);
 
-            // Poll for game updates
+            // Listen to Firebase game updates
             useEffect(() => {
-                if (!roomCode) return;
+                if (!roomCode || !window.firebaseDB) return;
                 
-                const interval = setInterval(() => {
-                    const result = storage.get(`game:${roomCode}`);
-                    if (result) {
-                        setGameData(JSON.parse(result.value));
+                const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode}`);
+                const unsubscribe = window.firebaseOnValue(gameRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        setGameData(data);
                     }
-                }, 1000);
+                });
 
-                return () => clearInterval(interval);
+                return () => unsubscribe();
             }, [roomCode]);
 
             const generateRoomCode = () => {
                 return Math.random().toString(36).substring(2, 8).toUpperCase();
             };
 
-            const createRoom = () => {
+            const createRoom = async () => {
                 if (!playerName.trim()) {
                     setError('Please enter your name');
                     return;
@@ -154,15 +166,21 @@
                     createdAt: Date.now()
                 };
 
-                storage.set(`game:${code}`, JSON.stringify(newGame));
-                setRoomCode(code);
-                setMyPlayerId(playerId);
-                setGameData(newGame);
-                setScreen('lobby');
+                try {
+                    const gameRef = window.firebaseRef(window.firebaseDB, `games/${code}`);
+                    await window.firebaseSet(gameRef, newGame);
+                    setRoomCode(code);
+                    setMyPlayerId(playerId);
+                    setGameData(newGame);
+                    setScreen('lobby');
+                } catch (err) {
+                    setError('Failed to create room. Please try again.');
+                    console.error(err);
+                }
                 setLoading(false);
             };
 
-            const joinRoom = () => {
+            const joinRoom = async () => {
                 if (!playerName.trim()) {
                     setError('Please enter your name');
                     return;
@@ -175,29 +193,36 @@
                 setLoading(true);
                 setError('');
                 
-                const result = storage.get(`game:${roomCode.toUpperCase()}`);
-                if (!result) {
-                    setError('Room not found');
-                    setLoading(false);
-                    return;
-                }
+                try {
+                    const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode.toUpperCase()}`);
+                    const snapshot = await window.firebaseGet(gameRef);
+                    
+                    if (!snapshot.exists()) {
+                        setError('Room not found');
+                        setLoading(false);
+                        return;
+                    }
 
-                const game = JSON.parse(result.value);
-                
-                if (game.status !== 'lobby') {
-                    setError('Game already in progress');
-                    setLoading(false);
-                    return;
-                }
+                    const game = snapshot.val();
+                    
+                    if (game.status !== 'lobby') {
+                        setError('Game already in progress');
+                        setLoading(false);
+                        return;
+                    }
 
-                const playerId = Date.now().toString();
-                game.players.push({ id: playerId, name: playerName.trim(), vote: null });
-                
-                storage.set(`game:${roomCode.toUpperCase()}`, JSON.stringify(game));
-                setMyPlayerId(playerId);
-                setGameData(game);
-                setRoomCode(roomCode.toUpperCase());
-                setScreen('lobby');
+                    const playerId = Date.now().toString();
+                    game.players.push({ id: playerId, name: playerName.trim(), vote: null });
+                    
+                    await window.firebaseSet(gameRef, game);
+                    setMyPlayerId(playerId);
+                    setGameData(game);
+                    setRoomCode(roomCode.toUpperCase());
+                    setScreen('lobby');
+                } catch (err) {
+                    setError('Failed to join room. Please try again.');
+                    console.error(err);
+                }
                 setLoading(false);
             };
 
@@ -249,7 +274,8 @@ Example: {"word": "Pizza", "hint": "Italian food"}`
                         startedAt: Date.now()
                     };
 
-                    storage.set(`game:${roomCode}`, JSON.stringify(updatedGame));
+                    const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode}`);
+                    await window.firebaseSet(gameRef, updatedGame);
                     setGameData(updatedGame);
                 } catch (err) {
                     console.error('Error generating word:', err);
@@ -259,7 +285,7 @@ Example: {"word": "Pizza", "hint": "Italian food"}`
                 }
             };
 
-            const submitVote = (votedPlayerId) => {
+            const submitVote = async (votedPlayerId) => {
                 const updatedPlayers = gameData.players.map(p => 
                     p.id === myPlayerId ? { ...p, vote: votedPlayerId } : p
                 );
@@ -275,12 +301,13 @@ Example: {"word": "Pizza", "hint": "Italian food"}`
                     updatedGame.status = 'results';
                 }
 
-                storage.set(`game:${roomCode}`, JSON.stringify(updatedGame));
+                const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode}`);
+                await window.firebaseSet(gameRef, updatedGame);
                 setGameData(updatedGame);
                 setMyVote(votedPlayerId);
             };
 
-            const resetGame = () => {
+            const resetGame = async () => {
                 const resetPlayers = gameData.players.map(p => ({ ...p, vote: null }));
                 const updatedGame = {
                     ...gameData,
@@ -291,7 +318,8 @@ Example: {"word": "Pizza", "hint": "Italian food"}`
                     imposter: null
                 };
 
-                storage.set(`game:${roomCode}`, JSON.stringify(updatedGame));
+                const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode}`);
+                await window.firebaseSet(gameRef, updatedGame);
                 setGameData(updatedGame);
                 setRoleRevealed(false);
                 setMyVote(null);
