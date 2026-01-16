@@ -88,6 +88,17 @@
             const generateRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
             const getRandomWord = async () => {
+                // Load word bank from Firebase if not already loaded
+                if (!WORD_BANK) {
+                    const wordBankRef = window.firebaseRef(window.firebaseDB, 'wordBank/words');
+                    const wordBankSnapshot = await window.firebaseGet(wordBankRef);
+                    if (wordBankSnapshot.exists()) {
+                        WORD_BANK = wordBankSnapshot.val();
+                    } else {
+                        throw new Error('Word bank not found in Firebase. Please upload words first.');
+                    }
+                }
+
                 const globalRef = window.firebaseRef(window.firebaseDB, 'globalUsedWords');
                 const snapshot = await window.firebaseGet(globalRef);
                 let usedWords = [], lastReset = 0;
@@ -112,7 +123,7 @@
                 setLoading(true); setError('');
                 const code = generateRoomCode();
                 const playerId = Date.now().toString();
-                const newGame = { code, host: playerId, players: [{ id: playerId, name: playerName.trim(), vote: null }], status: 'lobby', word: null, hint: null, imposter: null, currentTurn: 0, createdAt: Date.now() };
+                const newGame = { code, host: playerId, players: [{ id: playerId, name: playerName.trim() }], status: 'lobby', word: null, hint: null, imposter: null, currentTurn: 0, createdAt: Date.now() };
                 try {
                     const gameRef = window.firebaseRef(window.firebaseDB, `games/${code}`);
                     await window.firebaseSet(gameRef, newGame);
@@ -132,7 +143,7 @@
                     const game = snapshot.val();
                     if (game.status !== 'lobby') { setError('Game already in progress'); setLoading(false); return; }
                     const playerId = Date.now().toString();
-                    game.players.push({ id: playerId, name: playerName.trim(), vote: null });
+                    game.players.push({ id: playerId, name: playerName.trim() });
                     await window.firebaseSet(gameRef, game);
                     setMyPlayerId(playerId); setGameData(game); setRoomCode(roomCode.toUpperCase()); setScreen('lobby');
                 } catch (err) { setError('Failed to join room. Please try again.'); }
@@ -175,7 +186,7 @@
             };
 
             const resetGame = async () => {
-                const resetPlayers = gameData.players.map(p => ({ ...p, vote: null }));
+                const resetPlayers = gameData.players.map(p => ({ id: p.id, name: p.name, vote: null }));
                 const updatedGame = { ...gameData, players: resetPlayers, status: 'lobby', word: null, hint: null, imposter: null, currentTurn: 0 };
                 const gameRef = window.firebaseRef(window.firebaseDB, `games/${roomCode}`);
                 await window.firebaseSet(gameRef, updatedGame);
@@ -284,14 +295,14 @@
 
             if (gameData?.status === 'voting') {
                 const myPlayer = gameData.players.find(p => p.id === myPlayerId);
-                const hasVoted = myPlayer?.vote !== null;
+                const hasVoted = myPlayer && myPlayer.vote !== null && myPlayer.vote !== undefined;
                 const myVote = myPlayer?.vote;
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-red-500 flex items-center justify-center p-4">
                         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full">
                             <div className="text-center mb-6"><h2 className="text-3xl font-bold text-gray-800 mb-2">Vote for the Imposter</h2><p className="text-gray-600">Who do you think is lying?</p></div>
                             <div className="space-y-3 mb-6">{gameData.players.map((player) => <button key={player.id} onClick={() => submitVote(player.id)} disabled={hasVoted || player.id === myPlayerId} className={`w-full p-4 rounded-xl font-semibold transition-colors ${player.id === myPlayerId ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : myVote === player.id ? 'bg-purple-600 text-white' : hasVoted ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-purple-100 text-gray-800'}`}>{player.name}{player.id === myPlayerId && ' (You)'}{myVote === player.id && ' ✓'}</button>)}</div>
-                            {hasVoted && <div className="text-center text-gray-600"><p className="font-semibold mb-2">Vote submitted!</p><p className="text-sm">Waiting for other players...</p><div className="mt-4 text-sm">{gameData.players.filter(p => p.vote !== null).length} / {gameData.players.length} voted</div></div>}
+                            {hasVoted && <div className="text-center text-gray-600"><p className="font-semibold mb-2">Vote submitted!</p><p className="text-sm">Waiting for other players...</p><div className="mt-4 text-sm">{gameData.players.filter(p => p.vote !== null && p.vote !== undefined).length} / {gameData.players.length} voted</div></div>}
                         </div>
                     </div>
                 );
